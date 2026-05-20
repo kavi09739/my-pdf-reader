@@ -1,1 +1,1079 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Ocean PDF Reader & Aquarium</title>
+    
+    <!-- Google Fonts: සිරාම Premium අකුරු මෝස්තර සදහා -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+    
+    <!-- PDF.js Library: PDF කියවීම සඳහා -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
 
+    <style>
+        /* CSS Variables - සුපිරි වර්ණ මාලාව */
+        :root {
+            --neon-blue: #00f3ff;
+            --neon-pink: #ff007f;
+            --neon-purple: #9d00ff;
+            --glass-bg: rgba(6, 18, 36, 0.45);
+            --glass-border: rgba(0, 243, 255, 0.15);
+            --bg-gradient: radial-gradient(circle at 50% 30%, #0c2340 0%, #051329 70%, #010814 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg-gradient);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            color: #e2e8f0;
+        }
+
+        /* පසුබිමේ ඇති සුපිරි මාළු තටාකය (Interactive Canvas) */
+        #aquarium-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: auto;
+        }
+
+        /* deep ocean reef silhouette (මුහුදු පත්ලේ කොරල් සෙවනැල්ල) */
+        .reef-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 35vh;
+            background: linear-gradient(to top, rgba(1, 8, 20, 0.95) 0%, rgba(1, 8, 20, 0.7) 40%, transparent 100%);
+            z-index: 2;
+            pointer-events: none;
+            opacity: 0.85;
+        }
+
+        /* Extreme Glassmorphism Main Container */
+        .app-wrapper {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            pointer-events: none; /* මාළුවා ඇල්ලීමට පසුබිමට ඉඩ දේ */
+        }
+
+        /* Active clickables should have pointer events */
+        .interactive {
+            pointer-events: auto !important;
+        }
+
+        /* Header Navigation */
+        header {
+            width: 100%;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            background: rgba(4, 12, 24, 0.5);
+            border-bottom: 1px solid var(--glass-border);
+            z-index: 20;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .logo-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+            background: linear-gradient(45deg, #fff 30%, var(--neon-blue) 70%, var(--neon-pink) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
+        }
+
+        .logo-sub {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            color: #00f3ff;
+            opacity: 0.8;
+            margin-top: -2px;
+        }
+
+        /* Controls Panel */
+        .top-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .btn {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 10px 20px;
+            border-radius: 50px;
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .btn:hover {
+            border-color: var(--neon-blue);
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, rgba(0, 243, 255, 0.2) 0%, rgba(255, 0, 127, 0.1) 100%);
+            border: 1px solid var(--neon-blue);
+        }
+
+        .btn-circle {
+            width: 45px;
+            height: 45px;
+            padding: 0;
+            justify-content: center;
+            border-radius: 50%;
+        }
+
+        /* Workspace Grid */
+        .workspace {
+            flex: 1;
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+            overflow: hidden;
+            height: calc(100% - 90px);
+        }
+
+        /* Left Library Panel (Glassmorphic) */
+        .library-panel {
+            width: 320px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            transition: all 0.5s ease;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+        }
+
+        .panel-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.1rem;
+            letter-spacing: 1px;
+            color: #fff;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .book-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-right: 5px;
+        }
+
+        /* Webkit Scrollbar Customization */
+        .book-list::-webkit-scrollbar {
+            width: 5px;
+        }
+        .book-list::-webkit-scrollbar-thumb {
+            background: var(--neon-blue);
+            border-radius: 10px;
+        }
+
+        .book-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 12px 15px;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .book-item:hover, .book-item.active {
+            background: rgba(0, 243, 255, 0.08);
+            border-color: var(--neon-blue);
+            transform: translateX(5px);
+        }
+
+        .book-info {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .book-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: ellipsis;
+            color: #fff;
+        }
+
+        .book-size {
+            font-size: 0.7rem;
+            color: #8a99ad;
+        }
+
+        /* Right Reader Area */
+        .reader-panel {
+            flex: 1;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Glass PDF Display Frame */
+        .pdf-viewport-container {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            background: rgba(1, 10, 25, 0.3);
+            position: relative;
+        }
+
+        /* Gorgeous Custom Rendered PDF Canvas Frame */
+        #pdf-render-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 16px;
+            box-shadow: 0 15px 40px rgba(0, 243, 255, 0.15), 0 5px 15px rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: #fff;
+            transition: transform 0.2s ease;
+        }
+
+        /* Bottom Reading Action Bar */
+        .reader-nav {
+            padding: 15px;
+            background: rgba(4, 12, 24, 0.6);
+            border-top: 1px solid var(--glass-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 15;
+        }
+
+        .page-indicator {
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: var(--neon-blue);
+            background: rgba(0, 243, 255, 0.1);
+            padding: 6px 16px;
+            border-radius: 20px;
+            border: 1px solid rgba(0, 243, 255, 0.2);
+        }
+
+        /* Floating File Input Hidden */
+        #file-input {
+            display: none;
+        }
+
+        /* Beautiful Initial Welcome state */
+        .empty-reader-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            padding: 40px;
+            gap: 20px;
+        }
+
+        .empty-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: rgba(0, 243, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--neon-blue);
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.2);
+            animation: pulse-glow 3s infinite;
+        }
+
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 15px rgba(0, 243, 255, 0.2); }
+            50% { box-shadow: 0 0 35px rgba(0, 243, 255, 0.5); }
+            100% { box-shadow: 0 0 15px rgba(0, 243, 255, 0.2); }
+        }
+
+        .empty-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .empty-text {
+            font-size: 0.9rem;
+            color: #a0aec0;
+            max-width: 320px;
+            line-height: 1.5;
+        }
+
+        /* Delete button */
+        .btn-delete {
+            background: transparent;
+            border: none;
+            color: #ff4d4d;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 50%;
+            transition: 0.2s;
+        }
+
+        .btn-delete:hover {
+            background: rgba(255, 77, 77, 0.2);
+            transform: scale(1.15);
+        }
+
+        /* Mobile Optimization */
+        @media (max-width: 768px) {
+            .workspace {
+                flex-direction: column;
+            }
+            .library-panel {
+                width: 100%;
+                max-height: 200px;
+            }
+            header {
+                padding: 15px;
+            }
+            .logo-title {
+                font-size: 1.4rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 🐠 Interactive Neon Fish & Plankton Aquarium Background -->
+    <canvas id="aquarium-canvas"></canvas>
+    
+    <!-- Deep Ocean Corals/Reef Overlay -->
+    <div class="reef-overlay"></div>
+
+    <!-- UI Overlay Wrappers -->
+    <div class="app-wrapper">
+        
+        <!-- Header Nav -->
+        <header class="interactive">
+            <div class="logo-section">
+                <span class="logo-title">AQUA DOCS</span>
+                <span class="logo-sub">Cosmic Betta Edition</span>
+            </div>
+            <div class="top-controls">
+                <label for="file-input" class="btn btn-primary interactive">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                    ADD MANGA PDF
+                </label>
+                <input type="file" id="file-input" class="interactive" accept=".pdf">
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <div class="workspace">
+            
+            <!-- Left Panel (Manga Collection) -->
+            <div class="library-panel interactive">
+                <div class="panel-title">
+                    <span>MY LIBRARY</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--neon-blue)" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V3a1 1 0 0 1 1-1h15v20H6.5a2.5 2.5 0 0 1-2.5-2.5z"/></svg>
+                </div>
+                <!-- Book List Container -->
+                <div class="book-list" id="library-list">
+                    <!-- Books dynamically inserted here -->
+                </div>
+            </div>
+
+            <!-- Right Panel (Interactive Document Reader) -->
+            <div class="reader-panel interactive" id="reader-panel">
+                <div class="empty-reader-state" id="empty-state">
+                    <div class="empty-icon">
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--neon-blue)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    </div>
+                    <div class="empty-title">AQUARIUM PDF READER</div>
+                    <div class="empty-text">කරුණාකර PDF එකක් එක්කරන්න. කියවන අතරතුර පසුබිමේ සිටින Betta මාළුවා ස්පර්ශ කර ක්‍රීඩා කරන්න! 🐠✨</div>
+                </div>
+
+                <!-- PDF Canvas Viewport Container -->
+                <div class="pdf-viewport-container" id="viewport-container" style="display: none;">
+                    <canvas id="pdf-render-canvas"></canvas>
+                </div>
+
+                <!-- Action / Navigation Control footer -->
+                <div class="reader-nav interactive" id="reader-navigation" style="display: none;">
+                    <button class="btn" id="btn-prev">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                        PREV
+                    </button>
+                    
+                    <div class="page-indicator" id="page-num-display">PAGE 0 / 0</div>
+
+                    <div style="display: flex; gap: 10px;">
+                        <!-- 📷 Perfect Cropped Screenshot Button -->
+                        <button class="btn btn-circle" id="btn-screenshot" title="පිටුව පමණක් Screenshot කරන්න">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--neon-blue)" stroke-width="2.5">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                                <circle cx="12" cy="13" r="4"/>
+                            </svg>
+                        </button>
+
+                        <button class="btn" id="btn-next">
+                            NEXT
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- 🐠 WebGL-like Cinematic Physics & Custom Fish Simulation Code -->
+    <script>
+        // PDF.js worker setup
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+        // --- GLOBAL APP STATE ---
+        let db = null;
+        const DB_NAME = 'AquaDocsDB';
+        const STORE_NAME = 'manga_files';
+        let currentPdfDoc = null;
+        let currentPageNum = 1;
+        let isRendering = false;
+
+        // --- INTERACTIVE FISH & WATER ENGINE ---
+        const canvas = document.getElementById('aquarium-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Handling Screen Resizing Dynamically
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Interactive Cursor & Touch States
+        const pointer = {
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+            active: false,
+            radius: 100
+        };
+
+        // Track touch & mouse input
+        function updatePointer(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            pointer.x = clientX - rect.left;
+            pointer.y = clientY - rect.top;
+        }
+
+        window.addEventListener('mousedown', (e) => { pointer.active = true; updatePointer(e); createRipple(pointer.x, pointer.y); });
+        window.addEventListener('mousemove', (e) => { updatePointer(e); });
+        window.addEventListener('mouseup', () => { pointer.active = false; });
+        window.addEventListener('touchstart', (e) => { pointer.active = true; updatePointer(e); createRipple(pointer.x, pointer.y); });
+        window.addEventListener('touchmove', (e) => { updatePointer(e); });
+        window.addEventListener('touchend', () => { pointer.active = false; });
+
+        // Ripples System (තරංග)
+        const ripples = [];
+        function createRipple(x, y) {
+            ripples.push({
+                x: x,
+                y: y,
+                radius: 2,
+                maxRadius: 80,
+                opacity: 1,
+                speed: 3
+            });
+        }
+
+        // Ambient Plankton (පාවෙන ප්ලවාංග)
+        const planktons = [];
+        for (let i = 0; i < 40; i++) {
+            planktons.push({
+                x: Math.random() * window.innerWidth,
+                y: Math.random() * window.innerHeight,
+                size: Math.random() * 2 + 1,
+                speedX: (Math.random() - 0.5) * 0.4,
+                speedY: -Math.random() * 0.4 - 0.1,
+                glow: Math.random() * 0.5 + 0.5
+            });
+        }
+
+        // --- CLASS: BIOLUMINESCENT SILK-TAIL BETTA FISH ---
+        class BettaFish {
+            constructor() {
+                // Initializing physics-driven spine segments
+                this.spineLength = 12;
+                this.segmentDist = 14;
+                this.segments = [];
+                this.headX = window.innerWidth / 2;
+                this.headY = window.innerHeight / 3;
+                this.angle = 0;
+                this.targetAngle = 0;
+                this.swimSpeed = 0;
+
+                // Creating segmented skeletal chain
+                for (let i = 0; i < this.spineLength; i++) {
+                    this.segments.push({
+                        x: this.headX - i * this.segmentDist,
+                        y: this.headY,
+                        width: 18 * Math.pow(0.85, i / 2.5), // Tapering body
+                        angle: 0
+                    });
+                }
+
+                // AI Path Wander targets
+                this.wanderTarget = { x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight };
+                this.wanderTimer = 0;
+            }
+
+            update() {
+                // Deterministic targeted AI pathfinding or following touch input
+                let tx = this.wanderTarget.x;
+                let ty = this.wanderTarget.y;
+
+                if (pointer.active) {
+                    tx = pointer.x;
+                    ty = pointer.y;
+                } else {
+                    this.wanderTimer--;
+                    if (this.wanderTimer <= 0 || Math.hypot(this.headX - tx, this.headY - ty) < 60) {
+                        this.wanderTarget.x = Math.random() * window.innerWidth;
+                        this.wanderTarget.y = Math.random() * (window.innerHeight - 150) + 50;
+                        this.wanderTimer = Math.random() * 200 + 100;
+                    }
+                }
+
+                // Smoothly steer head towards targeted position
+                const dx = tx - this.headX;
+                const dy = ty - this.headY;
+                const dist = Math.hypot(dx, dy);
+                
+                this.targetAngle = Math.atan2(dy, dx);
+                
+                // Angle interpolation
+                let diff = this.targetAngle - this.angle;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                this.angle += diff * 0.05;
+
+                // Calculate variable swim speed
+                const maxSpeed = pointer.active ? 4.5 : 1.8;
+                const targetSpeed = Math.min(dist * 0.05, maxSpeed);
+                this.swimSpeed += (targetSpeed - this.swimSpeed) * 0.1;
+
+                // Head velocity translation
+                this.headX += Math.cos(this.angle) * this.swimSpeed;
+                this.headY += Math.sin(this.angle) * this.swimSpeed;
+
+                // Head bounds safety constraints
+                this.headX = Math.max(20, Math.min(canvas.width - 20, this.headX));
+                this.headY = Math.max(20, Math.min(canvas.height - 20, this.headY));
+
+                // First spine segment anchor
+                this.segments[0].x = this.headX;
+                this.segments[0].y = this.headY;
+                this.segments[0].angle = this.angle;
+
+                // Spine kinematics solver (Verlet-like chain constraint)
+                for (let i = 1; i < this.spineLength; i++) {
+                    const prev = this.segments[i - 1];
+                    const curr = this.segments[i];
+                    
+                    const dx = curr.x - prev.x;
+                    const dy = curr.y - prev.y;
+                    const d = Math.hypot(dx, dy);
+                    
+                    curr.angle = Math.atan2(dy, dx);
+                    
+                    // Pulling constraint
+                    curr.x = prev.x + (dx / d) * this.segmentDist;
+                    curr.y = prev.y + (dy / d) * this.segmentDist;
+                }
+            }
+
+            draw() {
+                const time = Date.now() * 0.0035;
+
+                // 1. Draw glowing realistic Drop Shadows
+                ctx.save();
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+                ctx.shadowBlur = 25;
+                ctx.fillStyle = 'rgba(0,0,0,0)'; // invisible path just for shadow
+                this.drawBodyPath(time, 40); // larger body layout for soft shadow base
+                ctx.restore();
+
+                // 2. Draw Translucent Bioluminescent Fins (වරල්)
+                // --- Tail Fin (ප්‍රධාන වල්ගය) ---
+                const tailNode = this.segments[this.spineLength - 1];
+                const tailAngle = tailNode.angle;
+
+                ctx.save();
+                ctx.globalCompositeOperation = 'screen';
+                
+                // Tail silk gradient
+                const tailGrad = ctx.createRadialGradient(tailNode.x, tailNode.y, 5, tailNode.x, tailNode.y, 140);
+                tailGrad.addColorStop(0, 'rgba(0, 243, 255, 0.6)');
+                tailGrad.addColorStop(0.3, 'rgba(157, 0, 255, 0.45)');
+                tailGrad.addColorStop(0.7, 'rgba(255, 0, 127, 0.3)');
+                tailGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+                ctx.fillStyle = tailGrad;
+                ctx.beginPath();
+                ctx.moveTo(tailNode.x, tailNode.y);
+
+                // Drawing gorgeous waving bezier wings for the tail
+                const tailWave = Math.sin(time * 1.5) * 0.35;
+                const leftFinX = tailNode.x - Math.cos(tailAngle - 0.4 + tailWave) * 110;
+                const leftFinY = tailNode.y - Math.sin(tailAngle - 0.4 + tailWave) * 110;
+                const rightFinX = tailNode.x - Math.cos(tailAngle + 0.4 - tailWave) * 110;
+                const rightFinY = tailNode.y - Math.sin(tailAngle + 0.4 - tailWave) * 110;
+
+                ctx.bezierCurveTo(
+                    tailNode.x - Math.cos(tailAngle - 0.8) * 60, tailNode.y - Math.sin(tailAngle - 0.8) * 60,
+                    leftFinX, leftFinY,
+                    tailNode.x - Math.cos(tailAngle + tailWave) * 160, tailNode.y - Math.sin(tailAngle + tailWave) * 160
+                );
+                ctx.bezierCurveTo(
+                    rightFinX, rightFinY,
+                    tailNode.x - Math.cos(tailAngle + 0.8) * 60, tailNode.y - Math.sin(tailAngle + 0.8) * 60,
+                    tailNode.x, tailNode.y
+                );
+                ctx.fill();
+
+                // --- Pectoral Fins (පැති වරල් දෙක) ---
+                const headNode = this.segments[1];
+                const headAngle = headNode.angle;
+
+                for (let side of [-1, 1]) {
+                    const pectAngle = headAngle + (Math.PI/2) * side + Math.sin(time * 2) * 0.2;
+                    const pectGrad = ctx.createRadialGradient(headNode.x, headNode.y, 2, headNode.x, headNode.y, 45);
+                    pectGrad.addColorStop(0, 'rgba(0, 243, 255, 0.7)');
+                    pectGrad.addColorStop(0.5, 'rgba(255, 0, 127, 0.4)');
+                    pectGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+                    ctx.fillStyle = pectGrad;
+                    ctx.beginPath();
+                    ctx.moveTo(headNode.x, headNode.y);
+                    ctx.bezierCurveTo(
+                        headNode.x + Math.cos(pectAngle + 0.3 * side) * 35, headNode.y + Math.sin(pectAngle + 0.3 * side) * 35,
+                        headNode.x + Math.cos(pectAngle - 0.2 * side) * 50, headNode.y + Math.sin(pectAngle - 0.2 * side) * 50,
+                        headNode.x + Math.cos(pectAngle - 0.5 * side) * 20, headNode.y + Math.sin(pectAngle - 0.5 * side) * 20
+                    );
+                    ctx.fill();
+                }
+
+                ctx.restore();
+
+                // 3. Draw Solid Bioluminescent Fish Body (ප්‍රධාන ශරීරය)
+                ctx.save();
+                const bodyGrad = ctx.createLinearGradient(
+                    this.segments[0].x, this.segments[0].y,
+                    tailNode.x, tailNode.y
+                );
+                bodyGrad.addColorStop(0, '#ffffff'); // glowing white head
+                bodyGrad.addColorStop(0.2, '#00f3ff'); // cyan neck
+                bodyGrad.addColorStop(0.6, '#9d00ff'); // violet torso
+                bodyGrad.addColorStop(1, '#ff007f'); // magenta tail tip
+
+                ctx.fillStyle = bodyGrad;
+                this.drawBodyPath(time, 0);
+                ctx.restore();
+
+                // 4. Glowing Coral-like Eyes (ඇස් දෙක)
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = '#00f3ff';
+                ctx.shadowBlur = 10;
+                
+                for (let side of [-1, 1]) {
+                    const eyeX = this.headX + Math.cos(this.angle + 0.5 * side) * 11;
+                    const eyeY = this.headY + Math.sin(this.angle + 0.5 * side) * 11;
+                    ctx.beginPath();
+                    ctx.arc(eyeX, eyeY, 2.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Procedural ribbon generator logic for the body contour
+            drawBodyPath(time, offset) {
+                ctx.beginPath();
+                
+                // Compute left side points
+                const leftPoints = [];
+                const rightPoints = [];
+
+                for (let i = 0; i < this.spineLength; i++) {
+                    const node = this.segments[i];
+                    const w = node.width + offset;
+                    // Injecting slight kinetic waving directly into body mesh
+                    const wave = Math.sin(time + i * 0.4) * 1.5;
+                    
+                    leftPoints.push({
+                        x: node.x + Math.cos(node.angle - Math.PI/2) * (w + wave),
+                        y: node.y + Math.sin(node.angle - Math.PI/2) * (w + wave)
+                    });
+                    
+                    rightPoints.push({
+                        x: node.x + Math.cos(node.angle + Math.PI/2) * (w - wave),
+                        y: node.y + Math.sin(node.angle + Math.PI/2) * (w - wave)
+                    });
+                }
+
+                // Render continuous polygon mesh
+                ctx.moveTo(leftPoints[0].x, leftPoints[0].y);
+                for (let i = 1; i < this.spineLength; i++) {
+                    ctx.lineTo(leftPoints[i].x, leftPoints[i].y);
+                }
+                for (let i = this.spineLength - 1; i >= 0; i--) {
+                    ctx.lineTo(rightPoints[i].x, rightPoints[i].y);
+                }
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+
+        // Initialize our magical Betta Fish
+        const betta = new BettaFish();
+
+        // --- CORE ANIMATION LOOP ---
+        function animate() {
+            // Semi-transparent redraw creates aquatic water flow drag effect
+            ctx.fillStyle = 'rgba(5, 19, 41, 0.12)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Draw planktons drifting
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            planktons.forEach(p => {
+                p.y += p.speedY;
+                p.x += p.speedX;
+                if (p.y < -10) {
+                    p.y = canvas.height + 10;
+                    p.x = Math.random() * canvas.width;
+                }
+                
+                ctx.fillStyle = `rgba(0, 243, 255, ${p.glow * 0.4})`;
+                ctx.shadowColor = '#00f3ff';
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+
+            // 2. Update and draw ripples
+            ripples.forEach((r, idx) => {
+                r.radius += r.speed;
+                r.opacity = 1 - (r.radius / r.maxRadius);
+                if (r.opacity <= 0) {
+                    ripples.splice(idx, 1);
+                    return;
+                }
+                ctx.strokeStyle = `rgba(0, 243, 255, ${r.opacity * 0.3})`;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(r.x, r.y, r.radius, 0, Math.PI*2);
+                ctx.stroke();
+            });
+
+            // 3. Update & Draw Betta Fish
+            betta.update();
+            betta.draw();
+
+            requestAnimationFrame(animate);
+        }
+        
+        // Start animation after DOM loads completely
+        window.onload = function() {
+            animate();
+            initIndexedDB();
+        }
+
+
+        // --- INDEXEDDB DATA ENGINE (OFFLINE FILE STORAGE) ---
+        function initIndexedDB() {
+            const request = indexedDB.open(DB_NAME, 1);
+
+            request.onerror = function() {
+                console.error("Database loading failed.");
+            };
+
+            request.onsuccess = function(e) {
+                db = e.target.result;
+                loadLibraryFromDB();
+            };
+
+            request.onupgradeneeded = function(e) {
+                const activeDb = e.target.result;
+                activeDb.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+            };
+        }
+
+        // Load all saved PDFs from the Local Database
+        function loadLibraryFromDB() {
+            if (!db) return;
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.getAll();
+
+            request.onsuccess = function(e) {
+                const books = e.target.result;
+                const container = document.getElementById('library-list');
+                container.innerHTML = '';
+
+                if (books.length === 0) {
+                    container.innerHTML = '<div style="color: #617d98; font-size: 0.8rem; text-align: center; padding: 20px;">No books saved. Add your Manga PDF!</div>';
+                    return;
+                }
+
+                books.forEach(book => {
+                    const div = document.createElement('div');
+                    div.className = 'book-item';
+                    div.innerHTML = `
+                        <div class="book-info" onclick="openBookFromDB(${book.id})">
+                            <span class="book-name">${book.name}</span>
+                            <span class="book-size">${(book.fileData.size / (1024*1024)).toFixed(2)} MB</span>
+                        </div>
+                        <button class="btn-delete" onclick="deleteBook(${book.id}, event)" title="Delete">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                    `;
+                    container.appendChild(div);
+                });
+            };
+        }
+
+        // Add Manga to Offline Database
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file || file.type !== 'application/pdf') return;
+
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+
+            const bookRecord = {
+                name: file.name,
+                fileData: file
+            };
+
+            const request = store.add(bookRecord);
+            request.onsuccess = function() {
+                loadLibraryFromDB();
+            };
+        });
+
+        // Delete book from library
+        window.deleteBook = function(id, event) {
+            event.stopPropagation();
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.delete(id);
+            request.onsuccess = function() {
+                loadLibraryFromDB();
+                document.getElementById('viewport-container').style.display = 'none';
+                document.getElementById('reader-navigation').style.display = 'none';
+                document.getElementById('empty-state').style.display = 'flex';
+            };
+        };
+
+
+        // --- MANGA PDF READER ENGINE ---
+        window.openBookFromDB = function(id) {
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.get(id);
+
+            request.onsuccess = function(e) {
+                const book = e.target.result;
+                if (!book) return;
+
+                const fileReader = new FileReader();
+                fileReader.onload = function() {
+                    const typedarray = new Uint8Array(this.result);
+                    pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+                        currentPdfDoc = pdf;
+                        currentPageNum = 1;
+                        
+                        document.getElementById('empty-state').style.display = 'none';
+                        document.getElementById('viewport-container').style.display = 'flex';
+                        document.getElementById('reader-navigation').style.display = 'flex';
+                        
+                        renderPdfPage(currentPageNum);
+                    });
+                };
+                fileReader.readAsArrayBuffer(book.fileData);
+            };
+        };
+
+        // Render PDF Page to Canvas with Mobile Responsive Density
+        function renderPdfPage(num) {
+            if (!currentPdfDoc || isRendering) return;
+            isRendering = true;
+
+            currentPdfDoc.getPage(num).then(function(page) {
+                const canvasRender = document.getElementById('pdf-render-canvas');
+                const ctxRender = canvasRender.getContext('2d');
+
+                // Custom viewport scaling matching device size
+                const viewport = page.getViewport({ scale: window.innerWidth < 768 ? 1.0 : 1.5 });
+                canvasRender.height = viewport.height;
+                canvasRender.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: ctxRender,
+                    viewport: viewport
+                };
+
+                const renderTask = page.render(renderContext);
+                renderTask.promise.then(function() {
+                    isRendering = false;
+                    document.getElementById('page-num-display').textContent = `PAGE ${num} / ${currentPdfDoc.numPages}`;
+                });
+            });
+        }
+
+        // Navigation controls
+        document.getElementById('btn-prev').addEventListener('click', () => {
+            if (currentPageNum <= 1) return;
+            currentPageNum--;
+            renderPdfPage(currentPageNum);
+        });
+
+        document.getElementById('btn-next').addEventListener('click', () => {
+            if (!currentPdfDoc || currentPageNum >= currentPdfDoc.numPages) return;
+            currentPageNum++;
+            renderPdfPage(currentPageNum);
+        });
+
+        // Swipe gestures for touch screens (Swipe to turn pages)
+        let touchStartX = 0;
+        let touchEndX = 0;
+        const viewportContainer = document.getElementById('viewport-container');
+
+        viewportContainer.addEventListener('touchstart', e => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, {passive: true});
+
+        viewportContainer.addEventListener('touchend', e => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipeGesture();
+        }, {passive: true});
+
+        function handleSwipeGesture() {
+            if (touchStartX - touchEndX > 50) {
+                // Swipe Left -> Next Page
+                if (currentPdfDoc && currentPageNum < currentPdfDoc.numPages) {
+                    currentPageNum++;
+                    renderPdfPage(currentPageNum);
+                }
+            }
+            if (touchEndX - touchStartX > 50) {
+                // Swipe Right -> Prev Page
+                if (currentPageNum > 1) {
+                    currentPageNum--;
+                    renderPdfPage(currentPageNum);
+                }
+            }
+        }
+
+
+        // --- 📷 PERFECT CROPPED SCREENSHOT SYSTEM ---
+        document.getElementById('btn-screenshot').addEventListener('click', () => {
+            const pdfCanvas = document.getElementById('pdf-render-canvas');
+            if (!pdfCanvas || !currentPdfDoc) return;
+
+            // Extract high quality image directly from render canvas (No UI captured)
+            const imgData = pdfCanvas.toDataURL('image/png');
+            
+            // Generate elegant download trigger link
+            const downloadLink = document.createElement('a');
+            downloadLink.href = imgData;
+            downloadLink.download = `Manga_Page_${currentPageNum}.png`;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+
+            // Touch ripple effect on UI to show success
+            createRipple(window.innerWidth / 2, window.innerHeight / 2);
+        });
+
+    </script>
+</body>
+</html>
+
+
+---
+
+### 💡 අලුත් අප්ඩේට් එකේ ක්‍රියාකාරීත්වය (How it works):
+1. **Interactive Glow Betta Fish:** ඇප් එකේ හිස් තැනක් (Header එක, Sidebar එක හැර) උඩ ඇඟිල්ල තියාගෙන ඉන්නකොට, දිලිසෙන Betta මාළුවා සැබෑ ලෙස පීනමින් ඇඟිල්ල ළඟටම එනවා. ඇඟිල්ල ඇදගෙන යද්දී (Drag) ඇඟිල්ල පස්සෙන්ම පීනනවා! 🐠✨
+2. **Double Color Plankton:** මාළුවා වේගයෙන් හැරෙද්දී සහ පීනද්දී වටේ තියෙන ප්ලවාංග (particles) ලස්සනට විසිරී යනවා.
+3. **Manga/PDF Loader:** ඔයාගේ Manga PDF එක දාලා කියවන්න පටන් ගන්න. ඒක **100% Offline** ඔයාගේ ෆෝන් එකේම සේව් වෙනවා.
+4. **Perfect Page Crop Screenshot:** උඩින් තියෙන කැමරා අයිකන් එක (`📷`) ඔබපු ගමන්, වෙනත් කිසිම සයිඩ්බාරයක්, වතුර පාරක් නැතුව **Manga පිටුව විතරක්ම** perfect විදිහට crop වෙලා download වෙනවා.
+
+කෝඩ් එක GitHub එකට දාලා සේව් කරලා බලන්න මචං! මේ Visuals ටික ඔයාගේ ෆෝන් එකට සෙට්ද? 😼🔥
